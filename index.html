@@ -1,32 +1,478 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
+<html lang="ar" dir="rtl">
+<head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Football Fixtures Live</title>
+    <title>مواعيد المباريات مباشرة</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <style>
-      body {
-        font-family: 'Cairo', 'Roboto', sans-serif;
-      }
+        body {
+            font-family: 'Cairo', 'Roboto', sans-serif;
+            background-color: #0D1C1A;
+            color: white;
+        }
+        .font-cairo { font-family: 'Cairo', sans-serif; }
+        .font-roboto { font-family: 'Roboto', sans-serif; }
+        .loader-spin {
+            border-color: #48bb78;
+            border-top-color: transparent;
+        }
+        .sticky-header {
+            position: -webkit-sticky;
+            position: sticky;
+            top: 76px;
+            z-index: 10;
+        }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
-  }
-}
-</script>
 </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
-  </body>
+<body>
+
+    <div id="app-container">
+        <header class="bg-black/20 shadow-md sticky top-0 z-20 backdrop-blur-sm">
+            <div class="container mx-auto p-4 flex justify-between items-center max-w-4xl">
+                <h1 id="app-title" class="text-xl sm:text-2xl font-bold text-white"></h1>
+                <button id="lang-toggle-btn" class="bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-4 rounded-full transition-colors duration-300"></button>
+            </div>
+        </header>
+
+        <main id="main-content" class="container mx-auto p-4 max-w-4xl">
+            <!-- Content will be injected here by JavaScript -->
+        </main>
+    </div>
+
+    <script type="module">
+        // --- CONSTANTS ---
+        const API_KEY = '872ecb8087056fcaad1f99226af747af';
+        const API_BASE_URL = 'https://v3.football.api-sports.io';
+        const PRIORITY_LEAGUE_IDS = [140, 39, 61, 200, 135];
+        const translations = {
+            ar: {
+                title: 'مواعيد المباريات مباشرة',
+                today: 'مباريات اليوم',
+                yesterday: 'مباريات الأمس',
+                tomorrow: 'مباريات الغد',
+                loading: 'جاري التحميل...',
+                noMatches: 'لا توجد مباريات في هذا اليوم.',
+                error: 'حدث خطأ أثناء جلب البيانات.',
+                back: 'العودة',
+                lineups: 'التشكيلة',
+                stats: 'الإحصائيات',
+                noLineups: 'التشكيلة غير متوفرة.',
+                noStats: 'الإحصائيات غير متوفرة.',
+                startingXI: 'التشكيلة الأساسية',
+                substitutes: 'البدلاء',
+                coach: 'المدرب',
+                lang_btn: 'English',
+            },
+            en: {
+                title: 'Live Football Fixtures',
+                today: "Today's Matches",
+                yesterday: 'Yesterday',
+                tomorrow: 'Tomorrow',
+                loading: 'Loading...',
+                noMatches: 'No matches found for this day.',
+                error: 'An error occurred while fetching data.',
+                back: 'Back',
+                lineups: 'Lineups',
+                stats: 'Stats',
+                noLineups: 'Lineups are not available.',
+                noStats: 'Statistics are not available.',
+                startingXI: 'Starting XI',
+                substitutes: 'Substitutes',
+                coach: 'Coach',
+                lang_btn: 'العربية',
+            }
+        };
+
+        // --- STATE ---
+        let state = {
+            language: 'ar',
+            activeTab: 'today',
+            selectedFixtureId: null,
+            cache: {},
+        };
+
+        // --- DOM ELEMENTS ---
+        const mainContent = document.getElementById('main-content');
+        const appTitle = document.getElementById('app-title');
+        const langToggleBtn = document.getElementById('lang-toggle-btn');
+        const htmlEl = document.documentElement;
+
+        // --- API SERVICE ---
+        const headers = {
+            'x-rapidapi-host': 'v3.football.api-sports.io',
+            'x-rapidapi-key': API_KEY,
+        };
+
+        async function fetchData(endpoint) {
+            const url = `${API_BASE_URL}/${endpoint}`;
+            if (state.cache[url]) {
+                return state.cache[url];
+            }
+            try {
+                const response = await fetch(url, { headers });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                if (data.errors && Object.keys(data.errors).length > 0) {
+                    console.error('API Errors:', data.errors);
+                    throw new Error('API returned an error.');
+                }
+                state.cache[url] = data.response;
+                return data.response;
+            } catch (error) {
+                console.error(`Failed to fetch from ${endpoint}:`, error);
+                throw error;
+            }
+        }
+
+        const getFixturesByDate = (date) => fetchData(`fixtures?date=${date}`);
+        const getLineups = (fixtureId) => fetchData(`fixtures/lineups?fixture=${fixtureId}`);
+        const getStatistics = (fixtureId) => fetchData(`fixtures/statistics?fixture=${fixtureId}`);
+
+        // --- DATE SERVICE ---
+        const getLocalDate = () => new Date();
+        const getFormattedDate = (date) => date.toISOString().split('T')[0];
+        const getLocalTime = (dateString, lang) => {
+            const date = new Date(dateString);
+            return date.toLocaleTimeString(lang === 'ar' ? 'ar-EG' : 'en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true,
+            });
+        };
+
+        // --- TEMPLATE/RENDER FUNCTIONS ---
+
+        const renderLoader = (message) => `
+            <div class="flex flex-col items-center justify-center text-center p-8">
+                <div class="w-12 h-12 border-4 loader-spin rounded-full animate-spin mb-4"></div>
+                <p class="text-lg text-gray-300">${message}</p>
+            </div>
+        `;
+        
+        const renderError = (message) => `<p class="text-center text-red-400 mt-8">${message}</p>`;
+
+        const renderFixtureCard = (fixtureData) => {
+            const { fixture, teams, goals, league } = fixtureData;
+            
+            let statusHTML;
+            if (fixture.status.short === 'FT') {
+                statusHTML = `
+                <div class="flex items-center justify-center space-x-4 rtl:space-x-reverse text-3xl font-bold">
+                    <span>${goals.home}</span>
+                    <span class="text-gray-400">-</span>
+                    <span>${goals.away}</span>
+                </div>`;
+            } else if (fixture.status.short === 'HT' || fixture.status.elapsed) {
+                statusHTML = `
+                <div class="text-center">
+                    <div class="flex items-center justify-center space-x-4 rtl:space-x-reverse text-3xl font-bold text-lime-400">
+                        <span>${goals.home}</span>
+                        <span class="text-gray-400">-</span>
+                        <span>${goals.away}</span>
+                    </div>
+                    <div class="text-sm text-lime-400 animate-pulse">${fixture.status.elapsed}'</div>
+                </div>`;
+            } else {
+                statusHTML = `<div class="text-xl font-bold">${getLocalTime(fixture.date, state.language)}</div>`;
+            }
+
+            return `
+                <div class="bg-white/10 rounded-lg p-4 cursor-pointer transition-transform transform hover:scale-[1.02] hover:shadow-lg hover:shadow-cyan-400/20 fixture-card" data-fixture-id="${fixture.id}">
+                    <div class="text-center text-sm text-gray-400 mb-2 truncate">${league.round}</div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1 flex flex-col items-center text-center gap-2">
+                            <img src="${teams.home.logo}" alt="${teams.home.name}" class="w-12 h-12 object-contain" />
+                            <span class="font-bold text-sm sm:text-base">${teams.home.name}</span>
+                        </div>
+                        <div class="w-28 text-center">${statusHTML}</div>
+                        <div class="flex-1 flex flex-col items-center text-center gap-2">
+                            <img src="${teams.away.logo}" alt="${teams.away.name}" class="w-12 h-12 object-contain" />
+                            <span class="font-bold text-sm sm:text-base">${teams.away.name}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+        
+        const renderFixturesList = async () => {
+            mainContent.innerHTML = renderLoader(translations[state.language].loading);
+
+            const date = getDateForTab(state.activeTab);
+
+            try {
+                const fixtures = await getFixturesByDate(date);
+                if (fixtures.length === 0) {
+                    mainContent.innerHTML = `<p class="text-center text-gray-400 mt-8">${translations[state.language].noMatches}</p>`;
+                    return;
+                }
+
+                const groupedFixtures = fixtures.reduce((acc, fixture) => {
+                    const leagueId = fixture.league.id.toString();
+                    if (!acc[leagueId]) {
+                        acc[leagueId] = { league: fixture.league, fixtures: [] };
+                    }
+                    acc[leagueId].fixtures.push(fixture);
+                    return acc;
+                }, {});
+                
+                const sortedLeagues = Object.values(groupedFixtures).sort((a, b) => {
+                    const indexA = PRIORITY_LEAGUE_IDS.indexOf(a.league.id);
+                    const indexB = PRIORITY_LEAGUE_IDS.indexOf(b.league.id);
+                    const sortA = indexA === -1 ? Infinity : indexA;
+                    const sortB = indexB === -1 ? Infinity : indexB;
+                    if (sortA !== sortB) return sortA - sortB;
+                    return a.league.name.localeCompare(b.league.name);
+                });
+
+                const fixturesHTML = sortedLeagues.map(({ league, fixtures: leagueFixtures }) => `
+                    <div key="${league.id}">
+                        <div class="flex items-center gap-3 p-3 mb-4 bg-black/40 backdrop-blur-sm rounded-lg shadow-lg sticky-header">
+                            ${league.flag ? `<img src="${league.flag}" alt="${league.country}" class="w-6 h-6 rounded-full object-cover" />` : ''}
+                            <img src="${league.logo}" alt="${league.name}" class="w-6 h-6 object-contain" />
+                            <div>
+                                <h3 class="font-bold text-white text-base sm:text-lg">${league.name}</h3>
+                                <p class="text-xs sm:text-sm text-gray-300">${league.country}</p>
+                            </div>
+                        </div>
+                        <div class="space-y-4">
+                            ${leagueFixtures
+                                .sort((a, b) => a.fixture.timestamp - b.fixture.timestamp)
+                                .map(renderFixtureCard)
+                                .join('')
+                            }
+                        </div>
+                    </div>
+                `).join('');
+
+                mainContent.innerHTML = `<div class="space-y-6">${fixturesHTML}</div>`;
+
+            } catch (error) {
+                mainContent.innerHTML = renderError(translations[state.language].error);
+            }
+        };
+
+        const renderMatchDetails = async () => {
+            mainContent.innerHTML = renderLoader(translations[state.language].loading);
+            
+            try {
+                const [lineups, stats] = await Promise.all([
+                    getLineups(state.selectedFixtureId),
+                    getStatistics(state.selectedFixtureId)
+                ]);
+
+                const renderLineupsContent = () => {
+                    if (!lineups || lineups.length < 2) return `<p class="text-center text-gray-400 mt-4">${translations[state.language].noLineups}</p>`;
+                    
+                    const [home, away] = lineups;
+                    const PlayerList = ({ title, players, coachName }) => `
+                        <div>
+                            <h4 class="text-lg font-bold text-lime-400 mb-2 border-b border-gray-600 pb-1">${title}</h4>
+                            <ul class="space-y-1 text-sm">
+                                ${players.map(({ player }) => `
+                                    <li class="flex items-center">
+                                        <span class="w-6 text-gray-400">${player.number}</span>
+                                        <span>${player.name}</span>
+                                        <span class="ms-auto text-gray-500">${player.pos}</span>
+                                    </li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+
+                    return `
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
+                            <div>
+                                <div class="flex items-center gap-3 mb-4">
+                                    <img src="${home.team.logo}" alt="${home.team.name}" class="w-8 h-8"/>
+                                    <h3 class="text-xl font-bold">${home.team.name} (${home.formation || ''})</h3>
+                                </div>
+                                ${PlayerList({ title: translations[state.language].startingXI, players: home.startXI })}
+                                <div class="mt-6">
+                                  ${PlayerList({ title: translations[state.language].substitutes, players: home.substitutes })}
+                                </div>
+                                 <h4 class="text-lg font-bold text-lime-400 mt-4 mb-2 border-b border-gray-600 pb-1">${translations[state.language].coach}</h4>
+                                <p class="text-sm">${home.coach.name}</p>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-3 mb-4">
+                                    <img src="${away.team.logo}" alt="${away.team.name}" class="w-8 h-8"/>
+                                    <h3 class="text-xl font-bold">${away.team.name} (${away.formation || ''})</h3>
+                                </div>
+                                ${PlayerList({ title: translations[state.language].startingXI, players: away.startXI })}
+                                <div class="mt-6">
+                                  ${PlayerList({ title: translations[state.language].substitutes, players: away.substitutes })}
+                                </div>
+                                <h4 class="text-lg font-bold text-lime-400 mt-4 mb-2 border-b border-gray-600 pb-1">${translations[state.language].coach}</h4>
+                                <p class="text-sm">${away.coach.name}</p>
+                            </div>
+                        </div>
+                    `;
+                };
+
+                const renderStatsContent = () => {
+                    if (!stats || stats.length < 2) return `<p class="text-center text-gray-400 mt-4">${translations[state.language].noStats}</p>`;
+                    
+                    const homeStats = stats[0].statistics;
+                    const awayStats = stats[1].statistics;
+                    const combinedStats = homeStats.map(homeStat => ({
+                        type: homeStat.type,
+                        home: homeStat.value ?? 0,
+                        away: awayStats.find(s => s.type === homeStat.type)?.value ?? 0
+                    }));
+
+                    return `
+                        <div class="mt-4 space-y-3">
+                            <div class="flex justify-between items-center mb-4 font-bold text-lg px-2">
+                                <div class="flex items-center gap-2"><img src="${stats[0].team.logo}" class="w-6 h-6"/><span>${stats[0].team.name}</span></div>
+                                <div class="flex items-center gap-2"><span>${stats[1].team.name}</span><img src="${stats[1].team.logo}" class="w-6 h-6"/></div>
+                            </div>
+                            ${combinedStats.map(({type, home, away}) => {
+                                const homeVal = parseInt(String(home).replace('%', '')) || 0;
+                                const awayVal = parseInt(String(away).replace('%', '')) || 0;
+                                const total = homeVal + awayVal;
+                                const homeWidth = total > 0 ? (homeVal / total) * 100 : 50;
+                                return `
+                                    <div key="${type}">
+                                        <div class="flex justify-between items-center text-sm font-bold mb-1 px-1">
+                                            <span>${home}</span>
+                                            <span class="text-gray-300">${type}</span>
+                                            <span>${away}</span>
+                                        </div>
+                                        <div class="flex w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                                            <div class="bg-lime-400" style="width: ${homeWidth}%"></div>
+                                            <div class="bg-cyan-400" style="width: ${100 - homeWidth}%"></div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `;
+                };
+                
+                mainContent.innerHTML = `
+                    <div class="bg-[#101F1C] p-4 sm:p-6 rounded-lg">
+                        <button id="back-btn" class="mb-4 bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-4 rounded-full transition-colors duration-300">
+                            &larr; ${translations[state.language].back}
+                        </button>
+                        <div class="flex border-b border-gray-700" id="details-tabs">
+                            <button data-tab="lineups" class="py-2 px-4 font-bold text-lg relative transition-colors text-white">
+                                <span>${translations[state.language].lineups}</span>
+                                <div class="absolute bottom-[-1px] left-0 right-0 h-1 bg-gradient-to-r from-lime-400 to-cyan-400"></div>
+                            </button>
+                            <button data-tab="stats" class="py-2 px-4 font-bold text-lg relative transition-colors text-gray-400 hover:text-gray-200">
+                                <span>${translations[state.language].stats}</span>
+                            </button>
+                        </div>
+                        <div id="details-content">
+                            ${renderLineupsContent()}
+                        </div>
+                    </div>
+                `;
+
+                // Add event listener for the details tabs
+                const detailsTabsContainer = document.getElementById('details-tabs');
+                detailsTabsContainer.addEventListener('click', (e) => {
+                    const button = e.target.closest('button');
+                    if (!button) return;
+                    
+                    const tab = button.dataset.tab;
+                    document.querySelectorAll('#details-tabs button').forEach(btn => {
+                        btn.classList.remove('text-white');
+                        btn.classList.add('text-gray-400', 'hover:text-gray-200');
+                        btn.querySelector('div')?.remove();
+                    });
+
+                    button.classList.add('text-white');
+                    button.classList.remove('text-gray-400', 'hover:text-gray-200');
+                    button.innerHTML += `<div class="absolute bottom-[-1px] left-0 right-0 h-1 bg-gradient-to-r from-lime-400 to-cyan-400"></div>`;
+                    
+                    document.getElementById('details-content').innerHTML = tab === 'lineups' ? renderLineupsContent() : renderStatsContent();
+                });
+
+            } catch (error) {
+                 mainContent.innerHTML = renderError(translations[state.language].error);
+            }
+        };
+
+        const renderApp = () => {
+            const T = translations[state.language];
+            htmlEl.lang = state.language;
+            htmlEl.dir = state.language === 'ar' ? 'rtl' : 'ltr';
+            document.body.className = state.language === 'ar' ? 'font-cairo' : 'font-roboto';
+            
+            appTitle.textContent = T.title;
+            langToggleBtn.textContent = T.lang_btn;
+
+            if (state.selectedFixtureId) {
+                renderMatchDetails();
+            } else {
+                const tabs = ['yesterday', 'today', 'tomorrow'];
+                const tabsHTML = `
+                    <div id="date-tabs" class="flex justify-center mb-6 bg-black/30 rounded-full p-1">
+                        ${tabs.map(tab => `
+                            <button data-tab="${tab}" class="w-1/3 py-2 px-4 rounded-full text-sm sm:text-base font-bold transition-all duration-300 ${state.activeTab === tab ? 'bg-gradient-to-r from-lime-400 to-cyan-400 text-black shadow-lg' : 'text-gray-300 hover:bg-white/10'}">
+                                ${T[tab]}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div id="fixtures-container"></div>
+                `;
+                mainContent.innerHTML = tabsHTML;
+                renderFixturesList();
+            }
+        };
+
+        // --- EVENT HANDLERS & INITIALIZATION ---
+
+        const getDateForTab = (tab) => {
+            const today = getLocalDate();
+            switch (tab) {
+                case 'yesterday': return getFormattedDate(new Date(today.setDate(today.getDate() - 1)));
+                case 'tomorrow': return getFormattedDate(new Date(today.setDate(today.getDate() + 1)));
+                case 'today':
+                default: return getFormattedDate(getLocalDate());
+            }
+        };
+
+        const handleLanguageToggle = () => {
+            state.language = state.language === 'en' ? 'ar' : 'en';
+            renderApp();
+        };
+        
+        mainContent.addEventListener('click', (e) => {
+            // Date tabs
+            const dateTab = e.target.closest('#date-tabs button');
+            if (dateTab) {
+                state.activeTab = dateTab.dataset.tab;
+                renderApp();
+                return;
+            }
+
+            // Fixture card
+            const fixtureCard = e.target.closest('.fixture-card');
+            if (fixtureCard) {
+                state.selectedFixtureId = parseInt(fixtureCard.dataset.fixtureId, 10);
+                renderApp();
+                return;
+            }
+
+            // Back button
+            const backBtn = e.target.closest('#back-btn');
+            if (backBtn) {
+                state.selectedFixtureId = null;
+                renderApp();
+                return;
+            }
+        });
+
+        langToggleBtn.addEventListener('click', handleLanguageToggle);
+
+        // Initial render
+        document.addEventListener('DOMContentLoaded', renderApp);
+
+    </script>
+</body>
 </html>
