@@ -1,0 +1,5 @@
+{
+  "name": "366score",
+  "description": "A modern, responsive football fixtures web application that displays live match schedules, results, and statistics. It fully supports both English and Arabic (RTL) languages.",
+  "requestFramePermissions": []
+}
